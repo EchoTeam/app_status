@@ -47,7 +47,7 @@ This statement will send message `{app_status, my_application, NewStatus}` to th
 when `my_application` will switch from the `ready` state to another and back.
 
 There are functions `app_status:wait/{1,2}` whose syncronically waits for some specified application
-will be in status `ready`.
+will not be in status `{waiting, ...}`.
 
 In order to obtain more information please refer the source code.
 
