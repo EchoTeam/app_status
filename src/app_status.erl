@@ -295,8 +295,8 @@ update_tree(Root, NewStatus, State) ->
             nop;
         {_Old, []} ->
             [begin
-                ets:delete(State#state.waits  , [{Root, {Ref, From}}]),
-                ets:delete(State#state.waits_r, [{{Root, Ref}, From}]),
+                ets:delete_object(State#state.waits,   {Root, {Ref, From}}),
+                ets:delete_object(State#state.waits_r, {{Root, Ref}, From}),
                 gen_server:reply(From, ok)
              end
              || {Ref, From} <- bag_lookup_element(State#state.waits, Root, 2)],
