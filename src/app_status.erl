@@ -89,14 +89,17 @@ expect_wait(Name, Expected, Timeout) ->
 
 -spec initializing(name()) -> ok.
 initializing(Name) ->
+    lager:info("[app_status] `~p` switching it's status to initializing", [Name]),
     gen_server:call(?MODULE, {set_status, Name, initializing}).
 
 -spec ready(name()) -> ok.
 ready(Name) ->
+    lager:info("[app_status] `~p` switching it's status to ready", [Name]),
     gen_server:call(?MODULE, {set_status, Name, ready}).
 
 -spec dead(name()) -> ok.
 dead(Name) ->
+    lager:info("[app_status] `~p` now dead", [Name]),
     gen_server:call(?MODULE, {set_status, Name, dead}).
 
 -spec get_status(name()) -> status() | {error, not_started}.
@@ -284,7 +287,6 @@ commit_expect(Name, ExpectedList, State) ->
 
 -spec update_tree(name(), int_status(), #state{}) -> ok.
 update_tree(Root, NewStatus, State) ->
-    lager:info("update_tree~p~n", [[Root, NewStatus]]),
     OldUnResolved = get_status_waiting(Root),
     NewUnResolved = [Exp || Exp <- bag_lookup_element(State#state.exps, Root, 2),
                             get_status(Exp) /= ready],
@@ -362,7 +364,6 @@ get_status_waiting(Name) ->
 
 -spec set_status_waiting(name(), [name()], #state{}) -> ok.
 set_status_waiting(Name, ExpList, _State) ->
-    lager:info("Tab = ~p~nCall = ~p~n", [ets:tab2list(?status_tab), {Name, ExpList}]),
     case ets:update_element(?status_tab, Name, {3, ExpList}) of
         true  -> ok;
         false ->
