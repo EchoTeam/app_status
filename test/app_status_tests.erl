@@ -83,18 +83,20 @@ wait_test() ->
     end,
     delayed(Fun) ! tick,
     app_status:ready(wait_test1),
+    app_status:initializing(wait_test2),
     ?assertEqual({recv, ok}, recv_()),
     ?assertEqual(ok, app_status:wait(wait_test1)),
-    app_status:initializing(wait_test1),
-    ?assertEqual(initializing, app_status:get_status(wait_test1)),
+    app_status:expect(wait_test1, wait_test2),
+    ?assertMatch({waiting, [wait_test2]}, app_status:get_status(wait_test1)),
     delayed(Fun) ! tick,
     timer:sleep(10),
-    app_status:ready(wait_test1),
+    app_status:ready(wait_test2),
     ?assertEqual({recv, ok}, recv_()),
     ok.
 
 wait_timeout_test() ->
     setup(),
+    app_status:expect(wait_timeout_test1, wait_timeout_test2),
     {Time, Ans} = timer:tc(app_status, wait, [wait_timeout_test1, 100]),
     ?assertMatch(T when T > 100000, Time),
     ?assertEqual({error, timeout}, Ans),

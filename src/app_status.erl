@@ -198,9 +198,8 @@ handle_call({set_status, Name, Status}, _From, State) ->
     update_tree(Name, Status, State),
     {reply, ok, State};
 handle_call({wait_for, Name, Ref}, From, State) ->
-    lager:info("From = ~p~n", [From]),
-    case get_status(Name) of
-        ready ->
+    case get_status_waiting(Name) of
+        [] ->
             {reply, ok, State};
         _ ->
             ets:insert(State#state.waits  , [{Name, {Ref, From}}]),
@@ -289,21 +288,26 @@ update_tree(Root, NewStatus, State) ->
     OldUnResolved = get_status_waiting(Root),
     NewUnResolved = [Exp || Exp <- bag_lookup_element(State#state.exps, Root, 2),
                             get_status(Exp) /= ready],
-    set_status_waiting(Root, NewUnResolved, State),
+    case {OldUnResolved, NewUnResolved} of
+        {Same, Same} ->
+            nop;
+        {_Old, []} ->
+            [begin
+                ets:delete(State#state.waits  , [{Root, {Ref, From}}]),
+                ets:delete(State#state.waits_r, [{{Root, Ref}, From}]),
+                gen_server:reply(From, ok)
+             end
+             || {Ref, From} <- bag_lookup_element(State#state.waits, Root, 2)],
+            set_status_waiting(Root, [], State);
+        _ -> 
+            set_status_waiting(Root, NewUnResolved, State)
+    end,
     OldStatus = get_int_status(Root),
     OldStatus /= NewStatus andalso set_int_status(Root, NewStatus, State),
     Escalate = case {OldStatus, OldUnResolved, NewStatus, NewUnResolved} of
         {ready, [], N, L} when N /= ready; L /= [] ->
             true;
         {N, L, ready, []} when N /= ready; L /= [] ->
-            [
-                begin
-                    ets:delete(State#state.waits  , [{Root, {Ref, From}}]),
-                    ets:delete(State#state.waits_r, [{{Root, Ref}, From}]),
-                    gen_server:reply(From, ok)
-                end
-                || {Ref, From} <- bag_lookup_element(State#state.waits, Root, 2)
-            ],
             true;
         _ ->
             false
