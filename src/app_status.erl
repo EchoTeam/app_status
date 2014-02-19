@@ -127,7 +127,7 @@ monitor(Name) ->
 
 -spec monitor(name(), pid()) -> ok.
 monitor(Name, Pid) ->
-    gen_server:call(?MODULE, {monitor, Name, Pid}).
+    app_status_monitor:monitor(Name, Pid).
 
 -spec initializing_monitor(name()) -> ok.
 initializing_monitor(Name) ->
@@ -171,8 +171,7 @@ fold(InitAcc, Fun) when is_function(Fun, 2) ->
         rexps  :: ets:tab(), %% name() -> [name()]
         waits  :: ets:tab(), %% name() -> [{ref, From}]
         waits_r:: ets:tab(), %% {name(), ref()} -> [From]
-        notify :: ets:tab(), %% name() -> [pid()]
-        monitor :: ets:tab() %% ref()  -> name()
+        notify :: ets:tab()  %% name() -> [pid()]
         }).
 
 init(_) ->
@@ -182,8 +181,7 @@ init(_) ->
             rexps  = ets:new(rexps, [bag, private]),
             waits  = ets:new(waits, [bag, private]),
             waits_r= ets:new(waits, [bag, private]),
-            notify = ets:new(notify, [bag, private]),
-            monitor= ets:new(monitor, [private])
+            notify = ets:new(notify, [bag, private])
             },
     {ok, State}.
 
@@ -221,10 +219,6 @@ handle_call({no_longer_wait_for, Name, Ref}, _From, State) ->
 handle_call({notify, Name, Pid}, _From, State) ->
     ets:insert(State#state.notify, [{Name, Pid}]),
     {reply, ok, State};
-handle_call({monitor, Name, Pid}, _From, State) ->
-    Ref = erlang:monitor(process, Pid),
-    ets:insert(State#state.monitor, [{Ref, Name}]),
-    {reply, ok, State};
 handle_call(Request, _From, State) ->
     lager:info("[~p] Bad call: ~p", [?MODULE, Request]),
     {reply, {error, unknown_call}, State}.
@@ -233,14 +227,6 @@ handle_cast(Msg, State) ->
     lager:info("[~p] Bad cast: ~p", [?MODULE, Msg]),
     {noreply, State}.
 
-handle_info({'DOWN', Ref, process, _Pid, _Reason}, State) ->
-    case ets:lookup(State#state.monitor, Ref) of
-        [{_, Name}] ->
-            update_tree(Name, dead, State);
-        _ ->
-            lager:info("Unknown process ~p died under monitor", [_Pid])
-    end,
-    {noreply, State};
 handle_info(_Info, State) ->
     lager:info("[~p] Bad info: ~p", [?MODULE, _Info]),
     {noreply, State}.

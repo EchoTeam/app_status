@@ -8,6 +8,7 @@
 %%
 
 setup() ->
+    app_status_monitor:start_link(),
     app_status:start_link().
 
 delayed(Fun) ->

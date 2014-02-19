@@ -23,7 +23,8 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-    Specs = [?CHILD(app_status, worker),
+    Specs = [?CHILD(app_status_monitor, worker),
+             ?CHILD(app_status, worker),
              ?CHILD(app_status_provider_application, worker)],
     {ok, {{one_for_one, 5, 10}, Specs}}.
 
