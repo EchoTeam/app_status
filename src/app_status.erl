@@ -14,8 +14,6 @@
 -export([expect/2,
          wait/1,
          wait/2,
-         expect_wait/2,
-         expect_wait/3,
          initializing/1,
          ready/1,
          dead/1,
@@ -23,21 +21,17 @@
          notify/1,
          notify/2,
          monitor/1,
-         monitor/2,
-         initializing_monitor/1, %% like start_link == start + link
-         initializing_monitor/2,
-         ready_monitor/1,
-         ready_monitor/2
+         monitor/2
         ]).
 
--export([i/0,
-         fold/2
-        ]).
+-export([i/0]).
 
--type name()   :: term().
--type int_status() :: not_seen | initializing | ready | dead.
--type status() :: {waiting, [name()]} | int_status().
--type expectations() :: name() | [name()].
+-export([fold/2]).
+
+-type name()            :: term().
+-type internal_status() :: not_seen | initializing | ready | dead.
+-type status()          :: {waiting, [name()]} | internal_status().
+-type expectations()    :: name() | [name()].
 
 -define(WAIT_TIMEOUT, 300000). %% 5m
 -define(status_tab, app_status_tab).
@@ -72,19 +66,6 @@ wait(Name, Timeout) ->
         exit:{timeout, _} ->
             _ = gen_server:call(?MODULE, {no_longer_wait_for, Name, Ref}),
             {error, timeout}
-    end.
-
--spec expect_wait(name(), expectations()) -> ok | {error, timeout | deadlock}.
-expect_wait(Name, Expected) ->
-    expect_wait(Name, Expected, ?WAIT_TIMEOUT).
-
--spec expect_wait(name(), expectations(), timeout()) -> ok | {error, timeout | deadlock}.
-expect_wait(Name, Expected, Timeout) ->
-    case expect(Name, Expected) of
-        ok ->
-            wait(Name, Timeout);
-        Error ->
-            Error
     end.
 
 -spec initializing(name()) -> ok.
@@ -132,34 +113,19 @@ monitor(Name) ->
 monitor(Name, Pid) ->
     app_status_monitor:monitor(Name, Pid).
 
--spec initializing_monitor(name()) -> ok.
-initializing_monitor(Name) ->
-    initializing_monitor(Name, self()).
-
--spec initializing_monitor(name(), pid()) -> ok.
-initializing_monitor(Name, Pid) ->
-    initializing(Name),
-    ?MODULE:monitor(Name, Pid).
-
--spec ready_monitor(name()) -> ok.
-ready_monitor(Name) ->
-    ready_monitor(Name, self()).
-
--spec ready_monitor(name(), pid()) -> ok.
-ready_monitor(Name, Pid) ->
-    ready(Name),
-    ?MODULE:monitor(Name, Pid).
-
-
 %%
 %% Debug API
 %%
 
--spec i() -> [{name(), int_status(), [name()]}].
+-spec i() -> [{name(), internal_status(), [name()]}].
 i() ->
     ets:tab2list(?status_tab).
 
--spec fold(Acc, fun(({name(), int_status(), [name()]}, Acc) -> Acc)) -> Acc.
+%%
+%% Providers API
+%%
+
+-spec fold(Acc, fun(({name(), internal_status(), [name()]}, Acc) -> Acc)) -> Acc.
 fold(InitAcc, Fun) when is_function(Fun, 2) ->
     ets:foldl(Fun, InitAcc, ?status_tab).
 
@@ -169,9 +135,9 @@ fold(InitAcc, Fun) when is_function(Fun, 2) ->
 %%
 
 -record(state, {
-        status :: ets:tab(), %% name() -> {int_status(), [name()]}
+        status :: ets:tab(), %% name() -> {internal_status(), [name()]}
         exps   :: ets:tab(), %% name() -> [name()]
-        rexps  :: ets:tab(), %% name() -> [name()]
+        exps_r :: ets:tab(), %% name() -> [name()]
         waits  :: ets:tab(), %% name() -> [{ref, From}]
         waits_r:: ets:tab(), %% {name(), ref()} -> [From]
         notify :: ets:tab()  %% name() -> [pid()]
@@ -179,11 +145,11 @@ fold(InitAcc, Fun) when is_function(Fun, 2) ->
 
 init(_) ->
     State = #state{
-            status = ets:new(?status_tab, [named_table]),
-            exps   = ets:new(exps, [bag, private]),
-            rexps  = ets:new(rexps, [bag, private]),
-            waits  = ets:new(waits, [bag, private]),
-            waits_r= ets:new(waits, [bag, private]),
+            status = ets:new(?status_tab, [named_table, protected]),
+            exps   = ets:new(exps,   [bag, private]),
+            exps_r = ets:new(exps_r, [bag, private]),
+            waits  = ets:new(waits,  [bag, private]),
+            waits_r= ets:new(waits,  [bag, private]),
             notify = ets:new(notify, [bag, private])
             },
     {ok, State}.
@@ -201,10 +167,10 @@ handle_call({set_status, Name, Status}, _From, State) ->
     update_tree(Name, Status, State),
     {reply, ok, State};
 handle_call({wait_for, Name, Ref}, From, State) ->
-    case get_status_waiting(Name) of
+    case get_unresolved_expectations(Name) of
         [] ->
             {reply, ok, State};
-        _ ->
+        [_|_] ->
             ets:insert(State#state.waits  , [{Name, {Ref, From}}]),
             ets:insert(State#state.waits_r, [{{Name, Ref}, From}]),
             {noreply, State}
@@ -212,25 +178,21 @@ handle_call({wait_for, Name, Ref}, From, State) ->
 handle_call({no_longer_wait_for, Name, Ref}, _From, State) ->
     case ets:lookup(State#state.waits_r, {Name, Ref}) of
         [{{Name, Ref}, From}] ->
-            ets:delete_object(State#state.waits  , {Name, {Ref, From}}),
-            ets:delete_object(State#state.waits_r, {{Name, Ref}, From}),
+            delete_from_waits(Name, Ref, From, State),
             {reply, ok, State};
-        _ ->
-            {reply, nomsg, State}
+        [] ->
+            {reply, {error, already_sent}, State}
     end;
 handle_call({notify, Name, Pid}, _From, State) ->
     ets:insert(State#state.notify, [{Name, Pid}]),
     {reply, ok, State};
-handle_call(Request, _From, State) ->
-    lager:info("[~p] Bad call: ~p", [?MODULE, Request]),
+handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
-handle_cast(Msg, State) ->
-    lager:info("[~p] Bad cast: ~p", [?MODULE, Msg]),
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(_Info, State) ->
-    lager:info("[~p] Bad info: ~p", [?MODULE, _Info]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -255,8 +217,8 @@ is_deadlock_caused(Name, Expected, OldExpetedTab) ->
 -type traversorFun(E, A) :: fun((E, A) -> {continue | stop, A}).
 -spec traverse(Tab :: ets:tab(), Backlog :: [name()], Res, Fun :: traversorFun(name(), Res)) 
     -> Res when Res :: any().
-traverse(Tab, Backlog, Init, Fun) when is_list(Backlog), is_function(Fun, 2) ->
-    traverse(Tab, Backlog, sets:new(), Init, Fun).
+traverse(ExpectTab, Backlog, Init, Fun) when is_list(Backlog), is_function(Fun, 2) ->
+    traverse(ExpectTab, Backlog, sets:new(), Init, Fun).
 
 traverse(_Tab, [], _Visited, Acc, _Fun) -> Acc;
 traverse(Tab, [Current | Backlog], VisitedSet, Acc, Fun) ->
@@ -276,18 +238,18 @@ traverse(Tab, [Current | Backlog], VisitedSet, Acc, Fun) ->
 
 -spec commit_expect(name(), [name()], #state{}) -> #state{}.
 commit_expect(Name, ExpectedList, State) ->
-    ets:insert(State#state.exps,  [{Name, Expected} || Expected <- ExpectedList]),
-    ets:insert(State#state.rexps, [{Expected, Name} || Expected <- ExpectedList]),
-    NewStatus = case get_int_status(Name) of
+    ets:insert(State#state.exps,   [{Name, Expected} || Expected <- ExpectedList]),
+    ets:insert(State#state.exps_r, [{Expected, Name} || Expected <- ExpectedList]),
+    NewStatus = case get_internal_status(Name) of
         not_seen -> initializing;
         S -> S
     end,
     update_tree(Name, NewStatus, State),
     State.
 
--spec update_tree(name(), int_status(), #state{}) -> ok.
+-spec update_tree(name(), internal_status(), #state{}) -> ok.
 update_tree(Root, NewStatus, State) ->
-    OldUnResolved = get_status_waiting(Root),
+    OldUnResolved = get_unresolved_expectations(Root),
     NewUnResolved = [Exp || Exp <- bag_lookup_element(State#state.exps, Root, 2),
                             get_status(Exp) /= ready],
     case {OldUnResolved, NewUnResolved} of
@@ -295,30 +257,29 @@ update_tree(Root, NewStatus, State) ->
             nop;
         {_Old, []} ->
             [begin
-                ets:delete_object(State#state.waits,   {Root, {Ref, From}}),
-                ets:delete_object(State#state.waits_r, {{Root, Ref}, From}),
+                delete_from_waits(Root, Ref, From, State),
                 gen_server:reply(From, ok)
              end
              || {Ref, From} <- bag_lookup_element(State#state.waits, Root, 2)],
-            set_status_waiting(Root, [], State);
-        _ -> 
-            set_status_waiting(Root, NewUnResolved, State)
+            set_unresolved_expectations(Root, [], State);
+        {_Old, New} -> 
+            set_unresolved_expectations(Root, New, State)
     end,
-    OldStatus = get_int_status(Root),
-    OldStatus /= NewStatus andalso set_int_status(Root, NewStatus, State),
+    OldStatus = get_internal_status(Root),
+    OldStatus /= NewStatus andalso set_internal_status(Root, NewStatus, State),
     Escalate = case {OldStatus, OldUnResolved, NewStatus, NewUnResolved} of
         {ready, [], N, L} when N /= ready; L /= [] ->
             true;
         {N, L, ready, []} when N /= ready; L /= [] ->
             true;
-        _ ->
+        {_, _, _, _} ->
             false
     end,
     case Escalate of
         true ->
             notify_ll(Root, get_status(Root), State),
-            [update_tree(User, get_int_status(User), State) ||
-                User <- bag_lookup_element(State#state.rexps, Root, 2)],
+            [update_tree(User, get_internal_status(User), State) ||
+                User <- bag_lookup_element(State#state.exps_r, Root, 2)],
             ok;
         false ->
             ok
@@ -328,6 +289,12 @@ update_tree(Root, NewStatus, State) ->
 -spec notify_ll(name(), any(), #state{}) -> ok.
 notify_ll(Name, Msg, #state{notify = NotifyTab}) ->
     [Client ! {?MODULE, Name, Msg} || Client <- bag_lookup_element(NotifyTab, Name, 2)],
+    ok.
+
+-spec delete_from_waits(name(), reference(), gen_server:from(), #state{}) -> ok.
+delete_from_waits(Name, Ref, From, State) ->
+    ets:delete_object(State#state.waits  , {Name, {Ref, From}}),
+    ets:delete_object(State#state.waits_r, {{Name, Ref}, From}),
     ok.
 
 %%
@@ -342,32 +309,31 @@ bag_lookup_element(Tab, Key, Pos) ->
     end.
 
 
--spec set_int_status(name(), int_status(), #state{}) -> ok.
-set_int_status(Name, Status, _State) ->
+-spec set_internal_status(name(), internal_status(), #state{}) -> ok.
+set_internal_status(Name, Status, _State) ->
     case ets:update_element(?status_tab, Name, {2, Status}) of
         false -> ets:insert(?status_tab, [{Name, Status, []}]);
-        _  -> ok 
+        true  -> ok 
     end.
 
--spec get_int_status(name()) -> int_status().
-get_int_status(Name) ->
+-spec get_internal_status(name()) -> internal_status().
+get_internal_status(Name) ->
     case ets:lookup(?status_tab, Name) of
         [{_Name, Status, _Waiting}] ->
             Status;
-        _ -> 
+        [] -> 
             not_seen
     end.
 
--spec get_status_waiting(name()) -> [name()].
-get_status_waiting(Name) ->
+-spec get_unresolved_expectations(name()) -> [name()].
+get_unresolved_expectations(Name) ->
     bag_lookup_element(?status_tab, Name, 3).
 
--spec set_status_waiting(name(), [name()], #state{}) -> ok.
-set_status_waiting(Name, ExpList, _State) ->
+-spec set_unresolved_expectations(name(), [name()], #state{}) -> ok.
+set_unresolved_expectations(Name, ExpList, _State) ->
     case ets:update_element(?status_tab, Name, {3, ExpList}) of
         true  -> ok;
         false ->
             ets:insert(?status_tab, [{Name, not_seen, ExpList}])
     end.
-
 
