@@ -109,7 +109,8 @@ monitor_test() ->
     setup(),
     Self = self(),
     Fun = fun (_) ->
-            app_status:ready_monitor(monitor_test1),
+            app_status:ready(monitor_test1),
+            app_status:monitor(monitor_test1),
             send_(Self, hi),
             recv_()
     end,
@@ -137,7 +138,7 @@ dead_lock_test() ->
     ?assertEqual({error, deadlock}, app_status:expect(e, c)),
     ?assertEqual(ok, app_status:expect(e, d)),
 
-    [?assertEqual({error, deadlock}, app_status:expect_wait(d, App)) 
+    [?assertEqual({error, deadlock}, app_status:expect(d, App)) 
      || App <- [a, b, c, d, e]],
     [app_status:ready(App) || App <- [a, b, c, d, e]],
     [?assertEqual(ready, app_status:get_status(App)) || App <- [a, b, c, d, e]],
