@@ -34,7 +34,7 @@ handle_info(_Info, State) ->
     update_ll(),
     Time = State#state.update_period,
     erlang:send_after(Time, self(), bump),
-    {noreply, State#state{update_period = erlang:min(10000, Time * 2)}, hibernate}.
+    {noreply, State#state{update_period = erlang:min(10000, Time + erlang:abs(10500 - Time) div 10)}, hibernate}.
 
 terminate(_Reason, _State) ->
     ok.
