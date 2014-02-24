@@ -46,7 +46,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 update_ll() ->
     StartedAppsSet = sets:from_list([element(1, App) || App <- application:which_applications()]),
-    ToStartSet = app_status:fold(StartedAppsSet,
+    ToStartSet = app_status_server:fold(StartedAppsSet,
         fun
             ({{application, App}, ready, []}, Set) ->
                 case sets:is_element(App, Set) of

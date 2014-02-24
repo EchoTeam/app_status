@@ -8,8 +8,20 @@
 %%
 
 setup() ->
-    app_status_monitor:start_link(),
-    app_status:start_link().
+    case whereis(app_status_sup) of
+        Pid when is_pid(Pid)->
+            Ref = erlang:monitor(process, Pid),
+            exit(Pid, normal),
+            receive 
+                {'DOWN', Ref, _, _, _} ->
+                    ok
+            after 100 ->
+                    throw({error, {app_status, stop_timeout}})
+            end;
+        _ ->
+            nop
+    end,
+    app_status_sup:start_link().
 
 delayed(Fun) ->
     Self = self(),
@@ -83,7 +95,7 @@ wait_test() ->
     end,
     delayed(Fun) ! tick,
     app_status:ready(wait_test1),
-    app_status:initializing(wait_test2),
+    app_status:init(wait_test2),
     ?assertEqual({recv, ok}, recv_()),
     ?assertEqual(ok, app_status:wait(wait_test1)),
     app_status:expect(wait_test1, wait_test2),
@@ -110,7 +122,6 @@ monitor_test() ->
     Self = self(),
     Fun = fun (_) ->
             app_status:ready(monitor_test1),
-            app_status:monitor(monitor_test1),
             send_(Self, hi),
             recv_()
     end,
@@ -193,12 +204,12 @@ hard_traverse_notify_test() ->
     app_status:notify({hard_traverse_test, a1}),
     app_status:notify({hard_traverse_test, b3}),
     ?assertEqual(no_msg, Recv()),
-    app_status:initializing({hard_traverse_test, c1}),
+    app_status:init({hard_traverse_test, c1}),
     ?assertMatch({msg, {app_status, {hard_traverse_test, a1}, {waiting, [{hard_traverse_test, B}]}}}
                  when B == b1; B == b2,
                  Recv()),
     ?assertEqual(no_msg, Recv()),
-    app_status:initializing({hard_traverse_test, c2}),
+    app_status:init({hard_traverse_test, c2}),
     ?assertEqual({msg, {app_status, {hard_traverse_test, b3}, {waiting, [{hard_traverse_test, c2}]}}},
                  Recv()),
     ?assertEqual(no_msg, Recv()),
