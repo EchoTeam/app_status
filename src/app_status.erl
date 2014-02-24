@@ -187,12 +187,15 @@ handle_call({notify, Name, Pid}, _From, State) ->
     ets:insert(State#state.notify, [{Name, Pid}]),
     {reply, ok, State};
 handle_call(_Request, _From, State) ->
+    lager:info("[app_status] Unknown handle_call request from ~p: ~p", [_From, _Request]),
     {reply, {error, unknown_call}, State}.
 
 handle_cast(_Msg, State) ->
+    lager:info("[app_status] Unknown handle_cast message: ~p", [_Msg]),
     {noreply, State}.
 
 handle_info(_Info, State) ->
+    lager:info("[app_status] Unknown handle_info message: ~p", [_Info]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
