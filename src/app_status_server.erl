@@ -134,6 +134,16 @@ handle_call({expect, Name, ExpectList}, _From, State) ->
     end;
 handle_call({set_status, Name, Status}, _From, State) ->
     update_tree(Name, Status, State),
+    case Status of
+        dead -> 
+            delete_expectations(Name, State),
+            ets:delete(?status_tab, Name);
+        init -> 
+            delete_expectations(Name, State),
+            set_unresolved_expectations(Name, [], State);
+        _ -> 
+            nop
+    end,
     {reply, ok, State};
 handle_call({wait_for, Name, Ref}, From, State) ->
     case get_unresolved_expectations(Name) of
@@ -311,4 +321,11 @@ set_unresolved_expectations(Name, ExpList, _State) ->
         false ->
             ets:insert(?status_tab, [{Name, not_seen, ExpList}])
     end.
+
+-spec delete_expectations(name(), #state{}) -> ok.
+delete_expectations(Name, State) ->
+    [ets:delete_object(State#state.exps_r, {Exp, Name})
+     || {_Name, Exp} <- ets:lookup(State#state.exps, Name)],
+    ets:delete(State#state.exps, Name),
+    ok.
 

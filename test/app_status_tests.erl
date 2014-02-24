@@ -88,6 +88,17 @@ easy_deadlock_test() ->
     ?assertEqual(not_seen, app_status:get_status(easy_deadlock_test2)),
     ok.
 
+delete_exps_on_init_test() ->
+    setup(),
+    app_status:init(delete_test1),
+    app_status:expect(delete_test1, delete_test2),
+    ?assertEqual({waiting, [delete_test2]}, app_status:get_status(delete_test1)),
+    app_status:init(delete_test1),
+    ?assertEqual(init, app_status:get_status(delete_test1)),
+    app_status:ready(delete_test1),
+    ?assertEqual(ready, app_status:get_status(delete_test1)),
+    ok.
+
 wait_test() ->
     setup(),
     Fun = fun (P) -> 
@@ -170,6 +181,7 @@ notify_test() ->
     app_status:dead(notify_test1),
     ?assertEqual({msg, {app_status, notify_test1, dead}}, Recv()),
     ?assertEqual(no_msg, Recv()),
+    app_status:expect(notify_test1, notify_test2),
     app_status:ready(notify_test1),
     ?assertEqual({msg, {app_status, notify_test1, ready}}, Recv()),
     ?assertEqual(no_msg, Recv()),
