@@ -62,7 +62,7 @@ init(Name, Params) ->
         false ->
             nop
     end,
-    ok = app_status_server:set_status(Name, init).
+    app_status_server:set_status(Name, init).
 
 
 -spec ready(name()) -> ok.
@@ -94,7 +94,7 @@ notify(Name) ->
 
 -spec denotify(name()) -> ok.
 denotify(Name) ->
-    app_status_server:notify(Name, self()).
+    app_status_server:denotify(Name, self()).
 
 %%
 %% Debug API

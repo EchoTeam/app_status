@@ -51,10 +51,10 @@ ycomb(Fun) -> Fun(Fun).
                     (N) -> 
                         case ((A) == (B)) of
                             true -> true;
-                            false -> timer:sleep(40), F(N - 1)
+                            false -> timer:sleep(10), F(N - 1)
                         end
                 end
-        end))(10)).
+        end))(50)).
 
 %%
 %% Tests
@@ -196,6 +196,7 @@ notify_test() ->
 
 
 hard_traverse_notify_test() ->
+    setup(),
     Exp = fun (A, B) ->
             ?assertEqual(ok,
                          app_status:expect({hard_traverse_test, A}, [{hard_traverse_test, BItem} || BItem <- B]))
@@ -233,3 +234,61 @@ hard_traverse_notify_test() ->
     ?assertEqual({msg, {app_status, {hard_traverse_test, b3}, ready}}, Msg2),
     ?assertEqual(no_msg, Recv()),
     ok.
+
+ready_no_monitor_test() ->
+    setup(),
+    delayed(fun (Self) -> app_status:ready(ready_no_monitor_test, [no_monitor]), send_(Self, 1) end) ! tick,
+    ?assertEqual({recv, 1}, recv_()),
+    ?assertEqual(ready, app_status:get_status(ready_no_monitor_test)),
+    timer:sleep(10),
+    ?assertEqual(ready, app_status:get_status(ready_no_monitor_test)),
+    ok.
+
+
+init_monitor_test() ->
+    setup(),
+    Pid = delayed(fun (_Self) -> app_status:init(init_monitor_test, [monitor]), recv_() end),
+    Pid ! tick,
+    ?untilEqual(init, app_status:get_status(init_monitor_test)),
+    send_(Pid, go),
+    ?untilEqual(dead, app_status:get_status(init_monitor_test)),
+    ok.
+
+init_monitor_by_pid_test() ->
+    setup(),
+    SimplePid = delayed(fun (_) -> ok end),
+    Pid = delayed(fun (_Self) -> app_status:init(init_monitor_by_pid_test, [{monitor, SimplePid}]), recv_() end),
+    Pid ! tick,
+    ?untilEqual(init, app_status:get_status(init_monitor_by_pid_test)),
+    send_(Pid, go),
+    SimplePid ! tick,
+    ?untilEqual(dead, app_status:get_status(init_monitor_by_pid_test)),
+    ok.
+
+ready_demonitor_test() ->
+    setup(),
+    SimplePid = delayed(fun (_) -> ok end),
+    Pid = delayed(fun (_Self) -> app_status:init(ready_demonitor_test, [{monitor, SimplePid}]) end),
+    Pid ! tick,
+    ?untilEqual(init, app_status:get_status(ready_demonitor_test)),
+    app_status:ready(ready_demonitor_test, [demonitor]),
+    ?assertEqual(ready, app_status:get_status(ready_demonitor_test)),
+    SimplePid ! tick,
+    timer:sleep(50),
+    ?assertEqual(ready, app_status:get_status(ready_demonitor_test)),
+    ok.
+
+denotify_test() ->
+    setup(),
+    Recv = fun () -> receive X -> {msg, X} after 10 -> no_msg end end,
+    app_status:notify(denotify_test),
+    ?assertEqual(no_msg, Recv()),
+    app_status:ready(denotify_test),
+    ?assertEqual({msg, {app_status, denotify_test, ready}}, Recv()),
+    ?assertEqual(no_msg, Recv()),
+    app_status:denotify(denotify_test),
+    ?assertEqual(no_msg, Recv()),
+    app_status:init(denotify_test),
+    ?assertEqual(no_msg, Recv()),
+    ok.
+
