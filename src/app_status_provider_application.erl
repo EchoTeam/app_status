@@ -48,7 +48,7 @@ update_ll() ->
     StartedAppsSet = sets:from_list([element(1, App) || App <- application:which_applications()]),
     ToStartSet = app_status_server:fold(StartedAppsSet,
         fun
-            ({{application, App}, ready, []}, Set) ->
+            ({{application, App}, _AnyState, []}, Set) ->
                 case sets:is_element(App, Set) of
                     true ->
                         sets:del_element(App, Set);

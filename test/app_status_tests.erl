@@ -1,13 +1,15 @@
 -module(app_status_tests).
+-export([setup/0]).
 
 -include_lib("eunit/include/eunit.hrl").
+
 
 
 %%
 %% Init
 %%
 
-setup() ->
+stop() ->
     case whereis(app_status_sup) of
         Pid when is_pid(Pid)->
             Ref = erlang:monitor(process, Pid),
@@ -20,7 +22,10 @@ setup() ->
             end;
         _ ->
             nop
-    end,
+    end.
+
+setup() ->
+    stop(),
     app_status_sup:start_link().
 
 delayed(Fun) ->
@@ -61,6 +66,7 @@ ycomb(Fun) -> Fun(Fun).
 %%
 
 not_started_test() ->
+    stop(),
     ?assertEqual({error, not_started}, app_status:get_status(not_started_test)),
     ok.
 
