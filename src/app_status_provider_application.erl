@@ -11,17 +11,30 @@
          terminate/2,
          code_change/3]).
 
+
+-ifdef(TEST).
+-export([new_time/1]).
+-endif.
+
+%%
+%% API
+%%
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 update() ->
     gen_server:call(?MODULE, update).
 
+%%
+%% GenServer's callbacks
+%%
+
 -record(state, {update_period :: non_neg_integer()}).
 
 init([]) ->
-    erlang:send_after(2000, self(), bump),
-    {ok, #state{update_period = 100}}.
+    erlang:send_after(1000, self(), bump),
+    {ok, #state{update_period = config(init_time)}}.
 
 handle_call(update, _From, State) ->
     update_ll(),
@@ -34,7 +47,7 @@ handle_info(_Info, State) ->
     update_ll(),
     Time = State#state.update_period,
     erlang:send_after(Time, self(), bump),
-    {noreply, State#state{update_period = erlang:min(10000, Time + erlang:abs(10500 - Time) div 10)}, hibernate}.
+    {noreply, State#state{update_period = new_time(Time)}, hibernate}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -43,6 +56,23 @@ code_change(_OldVsn, State, _Extra) ->
     update_ll(),
     {ok, State}.
 
+%%
+%% Internals
+%%
+
+get_env(Key, Default) ->
+    case application:get_env(app_status, Key) of
+        undefined -> Default;
+        Value     -> Value
+    end.
+
+config(init_time)  -> get_env(provider_init_time, 100);
+config(multiplier) -> get_env(provider_multiplier, 8 / 7);
+config(max_time)   -> get_env(provider_max_time, 10000).
+
+new_time(Old) ->
+    NewTime = round(Old * config(multiplier)),
+    erlang:min(NewTime, config(max_time)).
 
 update_ll() ->
     StartedAppsSet = sets:from_list([element(1, App) || App <- application:which_applications()]),

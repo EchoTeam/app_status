@@ -56,5 +56,10 @@ interference_test() ->
     ?assertEqual(ready, app_status:get_status(interference_test)), 
     ok.
 
+new_time_test() ->
+    Fun = fun(_Id, [Time | _] = Times) -> [app_status_provider_application:new_time(Time)| Times] end,
+    Times = lists:foldl(Fun, [100], lists:seq(0, 3)),
+    [?assertMatch(X when X < 1000, Time) || Time <- Times],
+    ok.
 
 % vim: ts=4 sw=4 et
