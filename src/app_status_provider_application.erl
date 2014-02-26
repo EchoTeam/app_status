@@ -89,7 +89,7 @@ update_ll() ->
             (_, Set) ->
                 Set
         end),
-    [app_status:ready({application, App}) || App <- sets:to_list(ToStartSet)],
+    [app_status:ready({application, App}, [no_monitor]) || App <- sets:to_list(ToStartSet)],
     ok.
 
 
