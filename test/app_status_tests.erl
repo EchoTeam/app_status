@@ -298,3 +298,4 @@ denotify_test() ->
     ?assertEqual(no_msg, Recv()),
     ok.
 
+% vim: ts=4 sw=4 et

@@ -104,23 +104,23 @@ fold(InitAcc, Fun) when is_function(Fun, 2) ->
 %%
 
 -record(state, {
-        status :: ets:tab(), %% name() -> {internal_status(), [name()]}
-        exps   :: ets:tab(), %% name() -> [name()]
-        exps_r :: ets:tab(), %% name() -> [name()]
-        waits  :: ets:tab(), %% name() -> [{ref, From}]
-        waits_r:: ets:tab(), %% {name(), ref()} -> [From]
-        notify :: ets:tab()  %% name() -> [pid()]
-        }).
+    status :: ets:tab(), %% name() -> {internal_status(), [name()]}
+    exps   :: ets:tab(), %% name() -> [name()]
+    exps_r :: ets:tab(), %% name() -> [name()]
+    waits  :: ets:tab(), %% name() -> [{ref, From}]
+    waits_r:: ets:tab(), %% {name(), ref()} -> [From]
+    notify :: ets:tab()  %% name() -> [pid()]
+}).
 
 init(_) ->
     State = #state{
-            status = ets:new(?status_tab, [named_table, protected]),
-            exps   = ets:new(exps,   [bag, private]),
-            exps_r = ets:new(exps_r, [bag, private]),
-            waits  = ets:new(waits,  [bag, private]),
-            waits_r= ets:new(waits,  [bag, private]),
-            notify = ets:new(notify, [bag, private])
-            },
+        status = ets:new(?status_tab, [named_table, protected]),
+        exps   = ets:new(exps,   [bag, private]),
+        exps_r = ets:new(exps_r, [bag, private]),
+        waits  = ets:new(waits,  [bag, private]),
+        waits_r= ets:new(waits,  [bag, private]),
+        notify = ets:new(notify, [bag, private])
+    },
     {ok, State}.
 
 handle_call({expect, Name, ExpectList}, _From, State) ->
@@ -328,4 +328,6 @@ delete_expectations(Name, State) ->
      || {_Name, Exp} <- ets:lookup(State#state.exps, Name)],
     ets:delete(State#state.exps, Name),
     ok.
+
+% vim: ts=4 sw=4 et
 

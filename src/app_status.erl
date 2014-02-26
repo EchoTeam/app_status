@@ -104,3 +104,4 @@ denotify(Name) ->
 i() ->
     app_status_server:i().
 
+% vim: ts=4 sw=4 et
