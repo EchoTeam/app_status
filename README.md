@@ -25,7 +25,7 @@ APP STATUS does not stick to the OTP-application name, you could use any arbitra
     app_status:dead({some_application, instance666}).
 ```
 
-Every application could be in several states: init, ready, dead and not_seen.
+Every application could be in several states: init, ready and not_seen.
 You should manually change state of the applications by calling one of `app_status:{init,ready,dead}/1`.
 You could switch the application state many times if you need.
 
@@ -41,7 +41,7 @@ it goes to the special `waiting` state: `app_status:get_status(my_application)` 
 APP STATUS also supports notifications via `app_status:notify/1` functions.
 
 ```erlang
-    app_status:notify(my_application, Pid2).
+    app_status:notify(my_application).
 ```
 
 This statement will send message `{app_status, my_application, NewStatus}` to the `Pid2` every time
